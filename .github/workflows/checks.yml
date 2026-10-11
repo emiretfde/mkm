@@ -22,5 +22,5 @@ jobs:
           node --check src/certificates.js
           node --check public/app.js
           node --check public/medical.js
-      - name: Run 16 regression tests
+      - name: Run regression tests
         run: node --test tests/*.test.mjs
