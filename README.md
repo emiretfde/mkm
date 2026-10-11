@@ -18,6 +18,10 @@ npx wrangler deploy
 
 > Kod i vizuelni dizajn prenose se iz postojeće MKM aplikacije.
 
+## Cloudflare Builds
+
+Produkcijska grana: `main`. Cloudflare izvršava `node --test tests/*.test.mjs`, a zatim `npx wrangler deploy` ako build prođe. Promjene baze zahtijevaju zasebnu, kontrolisanu migraciju. Vizuelne izmjene pripremaju se na zasebnoj grani radi pregleda prije spajanja.
+
 ## Izolovani Cloudflare preview
 
 Produkcijski deploy command ostaje `npx wrangler deploy`.
