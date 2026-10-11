@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "mkm-klub",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-10",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "d1_databases": [{"binding":"DB","database_name":"mkm-db","database_id":"fcb88398-71a4-4fc5-8681-022b8e45689f","migrations_dir":"migrations"}]
+}
