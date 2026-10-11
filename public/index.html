@@ -38,4 +38,18 @@ tbody tr:hover{background:#fafbfd}
 .login:before{content:"FK MKM  •  ŽFK MKM";display:block;font-weight:900;letter-spacing:.09em;color:#172330;background:linear-gradient(90deg,#ffcc2e 50%,#f6a2c8 50%);padding:13px;border-radius:10px;text-align:center;margin-bottom:16px}
 @media(max-width:850px){.side{width:210px}.main{padding:24px 18px}.mkm-crest{width:65px;height:65px;font-size:16px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.side{width:100%;padding:12px}.brand{margin:4px 5px 10px}.mkm-crests{gap:8px;margin-bottom:9px}.mkm-crest{width:50px;height:50px;font-size:12px;border-width:3px}.mkm-crest small{font-size:8px;margin-top:2px}.main{padding:19px 12px 55px}.header h1{font-size:27px}.panel{padding:15px}.card{min-height:92px;padding:14px}.card strong{font-size:24px}}
+
+/* Medical status: color reinforces, but does not replace the label. */
+.med-status{display:inline-block;font-size:12px;font-weight:700;padding:6px 11px;border-radius:50px;white-space:nowrap}
+.med-valid{background:#e7f6ec;color:#246e42}
+.med-soon{background:#fff3d5;color:#966000}
+.med-expired,.med-missing{background:#fbe5ed;color:#ad2455}
+.med-cards .card{border-top:3px solid #e6ebf0}
+.med-cards .card:nth-child(1){border-top-color:#65b985}
+.med-cards .card:nth-child(2){border-top-color:#f4c647}
+.med-cards .card:nth-child(3),.med-cards .card:nth-child(4){border-top-color:var(--mkm-pink)}
+/* Keep navigation usable on phones and low-height displays. */
+.menu button{min-height:43px}
+@media(min-width:621px){.side{position:sticky;top:0;height:100vh;overflow-y:auto}}
+@media(max-width:620px){.med-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style></head><body><div id="root"></div><script type="module" src="/app.js"></script></body></html>
