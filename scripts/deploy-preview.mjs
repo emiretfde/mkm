@@ -28,5 +28,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const migrationConfig = JSON.parse(readFileSync(new URL('../wrangler.preview-migrations.jsonc', import.meta.url), 'utf8'));
   validatePreview(config, migrationConfig, process.env.CF_BUILD_BRANCH);
   run(['d1', 'migrations', 'apply', 'PREVIEW_DB', '--remote', '--config', 'wrangler.preview-migrations.jsonc']);
+  const setup = spawnSync(process.execPath, ['scripts/seed-preview-admin.mjs'], { cwd: root, stdio: 'inherit' });
+  if (setup.error) throw setup.error;
+  if (setup.status !== 0) process.exit(setup.status || 1);
   run(['preview']);
 }

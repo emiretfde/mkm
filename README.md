@@ -30,3 +30,11 @@ da njen ID nije produkcijski. Zatim primjenjuje samo neprimijenjene migracije
 na `PREVIEW_DB` i pokreće `wrangler preview`. Produkcijske migracije se ne izvršavaju.
 Testna baza se ne puni kopijom produkcijskih podataka ili korisničkih naloga.
 Za prijavu treba zaseban testni nalog; prazna baza nema administratora.
+
+### Testni administrator
+
+U Cloudflare Build variables dodati **Secret** `MKM_PREVIEW_ADMIN_PASSWORD`
+(lozinka od 12–128 znakova) i ponoviti preview build. Lozinku ne unositi u kod,
+GitHub ili chat. Skripta kreira `preview-admin@mkm.test` samo ako testna baza
+još nema korisnika. Postojeći nalozi i lozinke se ne mijenjaju. Privremeni SQL
+sa nasoljenim hashom briše se nakon izvršenja i ne ispisuje se u build log.
