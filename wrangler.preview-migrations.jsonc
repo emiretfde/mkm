@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "d1_databases": [
+    {
+      "binding": "PREVIEW_DB",
+      "database_name": "mkm-preview-db",
+      "database_id": "12c73edb-a179-4806-b3a3-d54d0c467a82",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

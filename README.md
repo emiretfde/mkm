@@ -17,3 +17,16 @@ npx wrangler deploy
 ```
 
 > Kod i vizuelni dizajn prenose se iz postojeće MKM aplikacije.
+
+## Izolovani Cloudflare preview
+
+Produkcijski deploy command ostaje `npx wrangler deploy`.
+Za non-production/preview deploy command koristiti `npm run preview:deploy`.
+Build command ostaje `node --test tests/*.test.mjs`.
+
+Preview koristi zasebnu bazu `mkm-preview-db`, definisanu u `previews.d1_databases`.
+Skripta prvo provjerava da preview i migracije koriste istu testnu bazu i
+da njen ID nije produkcijski. Zatim primjenjuje samo neprimijenjene migracije
+na `PREVIEW_DB` i pokreće `wrangler preview`. Produkcijske migracije se ne izvršavaju.
+Testna baza se ne puni kopijom produkcijskih podataka ili korisničkih naloga.
+Za prijavu treba zaseban testni nalog; prazna baza nema administratora.

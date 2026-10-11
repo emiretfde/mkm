@@ -3,6 +3,25 @@
   "name": "mkm-klub",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-10",
-  "assets": { "directory": "./public", "binding": "ASSETS" },
-  "d1_databases": [{"binding":"DB","database_name":"mkm-db","database_id":"fcb88398-71a4-4fc5-8681-022b8e45689f","migrations_dir":"migrations"}]
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mkm-db",
+      "database_id": "fcb88398-71a4-4fc5-8681-022b8e45689f",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "previews": {
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "mkm-preview-db",
+        "database_id": "12c73edb-a179-4806-b3a3-d54d0c467a82"
+      }
+    ]
+  }
 }
