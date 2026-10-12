@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "mkm-klub",
+  "name": "klub",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-10",
   "assets": {
