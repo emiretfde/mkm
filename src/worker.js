@@ -74,7 +74,7 @@ async function route(request,env,url){
   const allGroups=(await db.prepare('SELECT * FROM groups ORDER BY name').all()).results;
   const groups=admin?allGroups:allGroups.filter(g=>gids.includes(g.id));
   const allMembers=(await db.prepare('SELECT * FROM members ORDER BY name').all()).results;
-  const members=admin?allMembers:allMembers.filter(m=>gids.includes(m.group_id)).map(({parent_phone,...m})=>m);
+  const members=admin?allMembers:allMembers.filter(m=>gids.includes(m.group_id)).map(({parent_phone,fee_exempt,fee_note,family_id,...m})=>m);
   const allSessions=(await db.prepare('SELECT * FROM sessions ORDER BY held_on DESC').all()).results;
   const sessions=admin?allSessions:allSessions.filter(s=>gids.includes(s.group_id));
   const allAtt=(await db.prepare('SELECT * FROM attendance').all()).results;

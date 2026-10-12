@@ -1,0 +1,26 @@
+name: MKM checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, 'design/**']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check src/worker.js
+          node --check src/certificates.js
+          node --check public/app.js
+          node --check public/medical.js
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
