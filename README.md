@@ -42,3 +42,34 @@ U Cloudflare Build variables dodati **Secret** `MKM_PREVIEW_ADMIN_PASSWORD`
 GitHub ili chat. Skripta kreira `preview-admin@mkm.test` samo ako testna baza
 još nema korisnika. Postojeći nalozi i lozinke se ne mijenjaju. Privremeni SQL
 sa nasoljenim hashom briše se nakon izvršenja i ne ispisuje se u build log.
+
+## Obavještenja i notifikacije
+
+Javna početna stranica prikazuje samo javne objave. Administrator objavljuje
+za cijeli klub ili grupu; trener samo za dodijeljenu grupu. Interna objava
+vidljiva je samo aktivnim, prijavljenim korisnicima sa odgovarajućim pristupom.
+Javna objava za grupu i dalje je javna i notifikacija ide svim javnim pretplatnicima.
+Prije objave prikazan je pregled i zaseban izbor za slanje notifikacije (isključen po pravilu).
+
+Za ovu funkciju potrebna je migracija `0005_announcements.sql`. Ona dodaje nove
+tabele; ne mijenja članove, uplate, članarine ili medicinske evidencije. Preview
+workflow primjenjuje je isključivo u izolovanoj preview bazi. Produkcijska
+migracija zahtijeva provjerenu rezervnu kopiju i izričitu saglasnost; nije automatska.
+
+Web Push koristi `@block65/webcrypto-web-push` sa RFC 8291 šifrovanjem i RFC 8292 VAPID
+autentifikacijom. Par ključeva generiše se jednom po bazi i ostaje u `push_config`;
+API vraća samo javni ključ. Privatni ključ, endpointi i ključevi uređaja ne objavljuju
+se u GitHubu, HTML-u ili logovima.
+
+Pretplata se uključuje samo klikom korisnika i dozvolom browsera. Može se isključiti
+na istom uređaju. iPhone zahtijeva otvaranje aplikacije sa početnog ekrana.
+Prijava povezuje uređaj sa nalogom, a izlazak sa javnom stranicom uklanja tu vezu.
+Notifikacija nikada ne sadrži tekst objave ili podatke evidencije; otvara istu aplikaciju,
+gdje se ponovo provjerava pristup.
+
+Dostave se čuvaju u redu. Prva serija pokušava odmah poslije objave, a preostale
+obrađuje minutni Cron Trigger (`triggers.crons`). Serija je ograničena na osam uređaja
+zbog ograničenja Worker subzahtjeva. Privremene greške ponavljaju se najviše pet puta;
+istekle pretplate (404/410) uklanjaju se. U previewu, gdje Cron nije aktivan,
+objava i otvaranje interne sekcije obrađuju narednu seriju. Stvarna push dostava
+na iPhone/Android zahtijeva provjeru na telefonu sa uključenom dozvolom.

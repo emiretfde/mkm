@@ -1,3 +1,4 @@
+import {announcementRoute,deliverPush} from './announcements.js';
 import {buildLedger} from './ledger.js';
 import {validateCertificateDates} from './certificates.js';
 import {validatePaymentCorrection} from './payment-corrections.js';
@@ -22,7 +23,7 @@ async function identity(req,db){const t=cookieToken(req);if(!/^[0-9a-f]{64}$/.te
 function makeCookie(token,age){return `mkm_session=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${age}`;}
 function assertAdmin(user){if(user.role!=='admin')throw Object.assign(Error('Samo administrator može mijenjati podatke.'),{status:403});}
 async function allowedGroup(db,user,gid){if(user.role==='admin')return true;return !!(await db.prepare('SELECT 1 FROM coach_groups WHERE user_id=? AND group_id=?').bind(user.id,gid).first());}
-async function route(request,env,url){
+async function route(request,env,url,ctx){
  const db=env.DB, method=request.method, p=url.pathname;
  if(method!=='GET'&&method!=='HEAD'){const origin=request.headers.get('Origin');if(origin&&origin!==url.origin)return err('Neispravan izvor zahtjeva.',403);}
  if(p==='/api/health'&&method==='GET')return ok({status:'ok'});
@@ -48,6 +49,8 @@ async function route(request,env,url){
   return new Response(JSON.stringify({ok:true}),{headers:{'Content-Type':'application/json','Set-Cookie':makeCookie('',0),'Cache-Control':'no-store'}});
  }
  const user=await identity(request,db);
+ const announcement=await announcementRoute(request,env,url,user,payload,ctx);
+ if(announcement)return announcement;
  if(!user)return err('Prijavi se za pristup.',401);
  if(p==='/api/me'&&method==='GET')return ok({user});
  // Date-only certificate register; no file uploads or public medical documents.
@@ -187,4 +190,4 @@ async function route(request,env,url){
  }
  return err('Nepoznata operacija.',404);
 }
-export default {async fetch(request,env){const url=new URL(request.url);if(!url.pathname.startsWith('/api/'))return env.ASSETS.fetch(request);try{return await route(request,env,url);}catch(e){if(e.status)return err(e.message,e.status);if(e.message?.includes('UNIQUE constraint'))return err('Ovaj podatak već postoji.',409);console.error(e);return err(e.message==='Obavezno polje nije popunjeno.'?e.message:'Greška na serveru.',e.message==='Obavezno polje nije popunjeno.'?400:500);}}};
+export default {async scheduled(event,env,ctx){ctx.waitUntil(deliverPush(env,'https://klub.fkmkm.workers.dev'));},async fetch(request,env,ctx){const url=new URL(request.url);if(!url.pathname.startsWith('/api/'))return env.ASSETS.fetch(request);try{return await route(request,env,url,ctx);}catch(e){if(e.status)return err(e.message,e.status);if(e.message?.includes('UNIQUE constraint'))return err('Ovaj podatak već postoji.',409);console.error(e);return err(e.message==='Obavezno polje nije popunjeno.'?e.message:'Greška na serveru.',e.message==='Obavezno polje nije popunjeno.'?400:500);}}};
