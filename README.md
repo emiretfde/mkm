@@ -73,3 +73,20 @@ zbog ograničenja Worker subzahtjeva. Privremene greške ponavljaju se najviše 
 istekle pretplate (404/410) uklanjaju se. U previewu, gdje Cron nije aktivan,
 objava i otvaranje interne sekcije obrađuju narednu seriju. Stvarna push dostava
 na iPhone/Android zahtijeva provjeru na telefonu sa uključenom dozvolom.
+
+## Članarina po članu
+
+Novi obračuni: dječaci 40 € mjesečno, djevojčice 0 €. Porodični popusti i
+stari status oslobađanja dječaka ne utiču na novi obračun. Istorijski
+podaci porodica i ranijih oslobađanja ostaju sačuvani.
+
+Administrator i trener mogu postaviti pojedinačnu članarinu dječaka na 30 €
+ili vratiti 40 €. Trener mijenja isključivo članove dodijeljenih grupa i ne
+dobija pristup uplatama, ukupnim finansijama ili ispravkama uplata.
+Svaka izmjena sadrži razlog, autora, prethodni iznos i mjesec početka primjene.
+Izmjena važi do naredne izmjene i ne smije prepisati već obračunati mjesec.
+Dug, kredit i pravila prenošenja preplate ostaju nepromijenjeni.
+
+Migracija `0006_simple_fees.sql` dodaje samo tabelu istorije cijene članarine.
+Ne prepravlja postojeće članove, uplate, obračune ili podatke porodica.
+Produkcijska objava zahtijeva saglasnost i provjerenu rezervnu kopiju baze.
