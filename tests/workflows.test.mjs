@@ -5,6 +5,7 @@ import {readFileSync,readdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import worker from '../src/worker.js';
 import {deliverPush} from '../src/announcements.js';
+import {currentFeeMonth} from '../src/simple-fees.js';
 
 // Real schema and SQL, isolated in memory; never connects to Cloudflare.
 function fixture(t){
@@ -31,15 +32,15 @@ function fixture(t){
  async function create(path,body){const r=await request(path,body);assert.equal(r.status,201,await r.clone().text());return (await r.json()).id;}
  return {sqlite,db,request,create};
 }
-test('real SQL fee generation applies 40 / 70 / 105 euros, exemptions and frozen charges',async t=>{
+test('real SQL fee generation applies uniform 40 euros, free girls and preserves frozen charges',async t=>{
  const {sqlite,request,create}=fixture(t);
  const group=await create('groups',{name:'TEST grupa'});
  const members=[];
  for(const count of [1,2,3]){
   const family=await create('families',{name:'TEST porodica '+count});
-  for(let i=0;i<count;i++)members.push({id:await create('members',{name:'TEST zapis '+count+'-'+i,group_id:group,gender:'boy',family_id:family}),cents:count===1?4000:3500});
+  for(let i=0;i<count;i++)members.push({id:await create('members',{name:'TEST zapis '+count+'-'+i,group_id:group,gender:'boy',family_id:family}),cents:4000});
  }
- for(const gender of ['girl','boy']) members.push({id:await create('members',{name:'TEST besplatni '+gender,group_id:group,gender,fee_exempt:gender==='boy'}),cents:0});
+ for(const gender of ['girl','boy']) members.push({id:await create('members',{name:'TEST besplatni '+gender,group_id:group,gender,fee_exempt:gender==='boy'}),cents:gender==='girl'?0:4000});
  const r=await request('fees/generate',{month:'2026-10'});assert.equal(r.status,201);
  const rows=sqlite.prepare('SELECT member_id,cents FROM fee_charges').all();
  assert.equal(rows.length,8);
@@ -163,4 +164,58 @@ test('push deliveries encrypt notifications, retry failures and revoke gone devi
  sqlite.prepare("UPDATE push_deliveries SET next_attempt=0,attempts=4 WHERE status='queued'").run();
  await deliverPush({DB:db},'https://mkm.test');
  assert.equal(sqlite.prepare("SELECT count(*) AS n FROM push_deliveries WHERE status='failed'").get().n,1);
+});
+
+test('coach can set own boy fee to 30 with an audit reason; other groups and girls stay protected',async t=>{
+ const {sqlite,request,create}=fixture(t);
+ const assigned=await create('groups',{name:'TEST dodijeljena'}),other=await create('groups',{name:'TEST druga'});
+ sqlite.prepare('INSERT INTO coach_groups(user_id,group_id) VALUES(?,?)').run('coach',assigned);
+ const boy=await create('members',{name:'TEST dječak',group_id:assigned,gender:'boy'});
+ const girl=await create('members',{name:'TEST djevojčica',group_id:assigned,gender:'girl'});
+ const foreign=await create('members',{name:'TEST tuđi član',group_id:other,gender:'boy'});
+ const month=currentFeeMonth();
+ const change={cents:3000,expected_cents:4000,effective_month:month,reason:'TEST dogovoren popust'};
+ assert.equal((await request('member-fees/'+foreign,change,'coach','PATCH')).status,403);
+ assert.equal((await request('member-fees/'+girl,change,'coach','PATCH')).status,400);
+ for(const bad of [{...change,cents:2000},{...change,reason:''},{...change,effective_month:'2020-01'}])assert.equal((await request('member-fees/'+boy,bad,'coach','PATCH')).status,400);
+ assert.equal((await request('member-fees/'+boy,change,'coach','PATCH')).status,201);
+ const history=sqlite.prepare('SELECT * FROM member_fee_changes').all();assert.equal(history.length,1);assert.equal(history[0].before_cents,4000);assert.equal(history[0].cents,3000);assert.equal(history[0].actor_id,'coach');
+ assert.equal(sqlite.prepare("SELECT count(*) AS n FROM audit_logs WHERE entity='member_fee'").get().n,1);
+ assert.equal((await request('member-fees/'+boy,change,'coach','PATCH')).status,409);
+ const amounts=await (await request('member-fees?month='+month,undefined,'coach')).json();
+ assert.equal(amounts.amounts.length,2);assert.equal(amounts.amounts.find(a=>a.member_id===boy).cents,3000);assert.equal(amounts.amounts.find(a=>a.member_id===girl).cents,0);
+ for(const row of amounts.amounts)for(const field of ['paid','debt','credit','payments'])assert.equal(field in row,false);
+ await create('fees/generate',{month});
+ assert.equal(sqlite.prepare('SELECT cents FROM fee_charges WHERE member_id=? AND month=?').get(boy,month).cents,3000);
+ assert.equal(sqlite.prepare('SELECT cents FROM fee_charges WHERE member_id=? AND month=?').get(girl,month).cents,0);
+ assert.equal((await request('member-fees/'+boy,{...change,cents:4000,expected_cents:3000},'coach','PATCH')).status,409);
+ assert.equal(sqlite.prepare('SELECT cents FROM fee_charges WHERE member_id=? AND month=?').get(boy,month).cents,3000);
+});
+
+test('new individual fee affects only uncharged months and keeps existing payments, debt and credit',async t=>{
+ const {sqlite,request,create}=fixture(t);
+ const group=await create('groups',{name:'TEST grupa'});
+ const boy=await create('members',{name:'TEST član',group_id:group,gender:'boy'});
+ const current=currentFeeMonth(),[year,month]=current.split('-').map(Number);
+ const next=`${month===12?year+1:year}-${String(month===12?1:month+1).padStart(2,'0')}`;
+ await create('fees/generate',{month:current});
+ const frozen=sqlite.prepare('SELECT * FROM fee_charges').all();
+ const payment=await create('payments',{member_id:boy,month:current,paid_at:current+'-01',cents:7000,method:'cash'});
+ const before=sqlite.prepare('SELECT * FROM payments WHERE id=?').get(payment);
+ assert.equal((await request('member-fees/'+boy,{cents:3000,expected_cents:4000,effective_month:next,reason:'TEST popust od sljedećeg mjeseca'},'admin','PATCH')).status,201);
+ await create('fees/generate',{month:next});
+ assert.deepEqual(sqlite.prepare('SELECT * FROM fee_charges WHERE month=?').all(current),frozen);
+ assert.deepEqual(sqlite.prepare('SELECT * FROM payments WHERE id=?').get(payment),before);
+ const dash=await (await request('dashboard?month='+next)).json();
+ assert.equal(dash.ledger.rows.find(r=>r.member_id===boy).debt,0);assert.equal(dash.ledger.rows.find(r=>r.member_id===boy).credit,0);
+ assert.equal(dash.charges[0].cents,3000);
+});
+
+test('member editing without retired family fee fields preserves historical metadata',async t=>{
+ const {sqlite,request,create}=fixture(t);
+ const group=await create('groups',{name:'TEST grupa'}),family=await create('families',{name:'TEST porodica'});
+ const id=await create('members',{name:'TEST član',group_id:group,gender:'boy',family_id:family,fee_exempt:true,fee_note:'TEST stari dogovor'});
+ assert.equal((await request('members/'+id,{name:'TEST novo ime',group_id:group,gender:'boy',active:true},'admin','PATCH')).status,200);
+ const m=sqlite.prepare('SELECT family_id,fee_exempt,fee_note FROM members WHERE id=?').get(id);
+ assert.deepEqual({...m},{family_id:family,fee_exempt:1,fee_note:'TEST stari dogovor'});
 });

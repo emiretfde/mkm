@@ -1,3 +1,4 @@
+import {memberFeeAmounts,feeChangeRoute,feeMonthValid} from './simple-fees.js';
 import {announcementRoute,deliverPush} from './announcements.js';
 import {buildLedger} from './ledger.js';
 import {validateCertificateDates} from './certificates.js';
@@ -53,6 +54,14 @@ async function route(request,env,url,ctx){
  if(announcement)return announcement;
  if(!user)return err('Prijavi se za pristup.',401);
  if(p==='/api/me'&&method==='GET')return ok({user});
+ if(p==='/api/member-fees'&&method==='GET'){
+  const selected=url.searchParams.get('month')||new Date().toISOString().slice(0,7);if(!feeMonthValid(selected))return err('Neispravan mjesec.');
+  const members=(await db.prepare('SELECT id,group_id,active,gender FROM members WHERE active=1').all()).results;
+  const ids=user.role==='admin'?null:(await db.prepare('SELECT group_id FROM coach_groups WHERE user_id=?').bind(user.id).all()).results.map(x=>x.group_id);
+  return ok({amounts:await memberFeeAmounts(db,members.filter(m=>!ids||ids.includes(m.group_id)),selected)});
+ }
+ const feeChange=await feeChangeRoute(request,db,user,url,payload,allowedGroup);if(feeChange)return feeChange;
+
  // Date-only certificate register; no file uploads or public medical documents.
  if(p==='/api/certificates'&&method==='GET'){
   const rows=(await db.prepare('SELECT c.id,c.member_id,c.issued_on,c.expires_on,c.recorded_at,c.archived_at,m.group_id FROM medical_certificates c JOIN members m ON m.id=c.member_id ORDER BY c.recorded_at DESC').all()).results;
@@ -93,8 +102,8 @@ async function route(request,env,url,ctx){
   const charges=allCharges.filter(c=>c.month===selectedMonth);
   const ledger=buildLedger(allCharges,payments,selectedMonth);
   const corrections=(await db.prepare('SELECT c.id,c.payment_id,c.actor_id,u.display_name AS actor_name,c.reason,c.before_json,c.after_json,c.corrected_at FROM payment_corrections c LEFT JOIN users u ON u.id=c.actor_id ORDER BY c.corrected_at DESC,c.rowid DESC LIMIT 500').all()).results;
-  const cfg=await db.prepare("SELECT value FROM settings WHERE key='monthly_fee_cents'").first();
-  return ok({user,groups,members,sessions,attendance,payments,users,links,families,charges,ledger,corrections,monthlyFeeCents:Number(cfg?.value||3000)});
+  const feeChanges=(await db.prepare('SELECT f.id,f.member_id,f.effective_month,f.cents,f.before_cents,f.reason,f.created_at,u.display_name AS actor_name FROM member_fee_changes f LEFT JOIN users u ON u.id=f.actor_id ORDER BY f.rowid DESC LIMIT 500').all()).results;
+  return ok({user,groups,members,sessions,attendance,payments,users,links,families,charges,ledger,corrections,feeChanges,monthlyFeeCents:4000});
  }
  if(method!=='POST'&&method!=='PATCH')return err('Nepodržana operacija.',405);
  assertAdmin(user);
@@ -109,24 +118,11 @@ async function route(request,env,url,ctx){
  }
  if(p==='/api/fees/generate'&&method==='POST'){
   const billMonth=requireStr(b.month,7);if(!validMonth(billMonth))return err('Neispravan mjesec.');
-  const members=(await db.prepare('SELECT id,name,family_id,gender,fee_exempt FROM members WHERE active=1').all()).results;
-  const unclassified=members.filter(m=>!['boy','girl'].includes(m.gender));
-  if(unclassified.length)return err(`Prvo označi dječak/djevojčica za ${unclassified.length} aktivnih članova.`,409);
-  const grouped=new Map();
-  for(const m of members){const key=m.family_id||m.id;if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(m);}
-  const rows=[];
-  for(const family of grouped.values()){
-   const boys=family.filter(m=>m.gender==='boy'&&!m.fee_exempt);
-   if(boys.length>3)return err('Porodica sa više od tri dječaka zahtijeva posebno pravilo. Obračun nije izvršen.',409);
-   const each=boys.length===1?4000:3500;
-   for(const m of family){const charge=(m.gender==='girl'||m.fee_exempt)?0:each;
-    rows.push({id:m.id,cents:charge,reason:m.gender==='girl'?'djevojčica':m.fee_exempt?'oslobođen':boys.length===1?'jedan dječak':`${boys.length} dječaka u porodici`});
-   }
-  }
+  const members=(await db.prepare('SELECT id FROM members WHERE active=1').all()).results;
   const existing=(await db.prepare('SELECT COUNT(*) AS n FROM fee_charges WHERE month=?').bind(billMonth).first()).n;
   if(existing)return err('Za taj mjesec već postoje zaduženja; ne mijenjamo ranije obračune.',409);
-  if(rows.length){await db.batch(rows.map(r=>db.prepare('INSERT INTO fee_charges(id,member_id,month,cents,reason,created_by) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),r.id,billMonth,r.cents,r.reason,user.id)));}
-  await audit(db,user.id,'generate','fee_charges',billMonth);return ok({created:rows.length},201);
+  if(members.length){await db.batch(members.map(m=>db.prepare("INSERT INTO fee_charges(id,member_id,month,cents,reason,created_by) SELECT ?,id,?,CASE WHEN gender='girl' THEN 0 ELSE COALESCE((SELECT cents FROM member_fee_changes WHERE member_id=members.id AND effective_month<=? ORDER BY effective_month DESC,rowid DESC LIMIT 1),4000) END,CASE WHEN gender='girl' THEN 'djevojčica · besplatno' WHEN COALESCE((SELECT cents FROM member_fee_changes WHERE member_id=members.id AND effective_month<=? ORDER BY effective_month DESC,rowid DESC LIMIT 1),4000)=3000 THEN 'pojedinačna članarina 30 €' ELSE 'standardna članarina 40 €' END,? FROM members WHERE id=? AND active=1").bind(crypto.randomUUID(),billMonth,billMonth,billMonth,user.id,m.id)));}
+  await audit(db,user.id,'generate','fee_charges',billMonth);return ok({created:members.length},201);
  }
  if(p==='/api/members'&&method==='POST'){
   const name=requireStr(b.name,120),birth=str(b.birth_date,10),group=requireStr(b.group_id,70);
@@ -138,12 +134,12 @@ async function route(request,env,url,ctx){
   await db.prepare('INSERT INTO members(id,name,birth_date,group_id,parent_name,parent_phone,gender,family_id,fee_exempt,fee_note) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(id,name,birth,group,str(b.parent_name,120),str(b.parent_phone,40),gender,familyId,b.fee_exempt===true?1:0,str(b.fee_note,200)).run();await audit(db,user.id,'create','member',id);return ok({id},201);
  }
  if(p.startsWith('/api/members/')&&method==='PATCH'){
-  const mid=p.split('/')[3];const found=await db.prepare('SELECT id FROM members WHERE id=?').bind(mid).first();if(!found)return err('Član ne postoji.',404);
+  const mid=p.split('/')[3];const found=await db.prepare('SELECT * FROM members WHERE id=?').bind(mid).first();if(!found)return err('Član ne postoji.',404);
   const name=requireStr(b.name,120),birth=str(b.birth_date,10),group=requireStr(b.group_id,70);if(birth&&!validDate(birth))return err('Neispravan datum.');
   if(!(await db.prepare('SELECT 1 FROM groups WHERE id=?').bind(group).first()))return err('Grupa ne postoji.');
-  const gender=['boy','girl'].includes(b.gender)?b.gender:null;const familyId=str(b.family_id,70)||null;
+  const gender=['boy','girl'].includes(b.gender)?b.gender:null;const familyId=Object.hasOwn(b,'family_id')?(str(b.family_id,70)||null):found.family_id;
   if(familyId&&!(await db.prepare('SELECT 1 FROM families WHERE id=?').bind(familyId).first()))return err('Porodica ne postoji.');
-  await db.prepare('UPDATE members SET name=?,birth_date=?,group_id=?,parent_name=?,parent_phone=?,active=?,gender=?,family_id=?,fee_exempt=?,fee_note=? WHERE id=?').bind(name,birth,group,str(b.parent_name,120),str(b.parent_phone,40),b.active===false?0:1,gender,familyId,b.fee_exempt===true?1:0,str(b.fee_note,200),mid).run();await audit(db,user.id,'update','member',mid);return ok({ok:true});
+  await db.prepare('UPDATE members SET name=?,birth_date=?,group_id=?,parent_name=?,parent_phone=?,active=?,gender=?,family_id=?,fee_exempt=?,fee_note=? WHERE id=?').bind(name,birth,group,str(b.parent_name,120),str(b.parent_phone,40),b.active===false?0:1,gender,familyId,Object.hasOwn(b,'fee_exempt')?(b.fee_exempt===true?1:0):found.fee_exempt,Object.hasOwn(b,'fee_note')?str(b.fee_note,200):found.fee_note,mid).run();await audit(db,user.id,'update','member',mid);return ok({ok:true});
  }
  if(p==='/api/payments'&&method==='POST'){
   const member=requireStr(b.member_id,70),month=requireStr(b.month,7),paid=requireStr(b.paid_at,10),cents=Number(b.cents),method=str(b.method,10);
@@ -184,10 +180,8 @@ async function route(request,env,url,ctx){
   await db.batch([db.prepare('INSERT INTO users(id,email,display_name,role,password_salt,password_hash,iterations) VALUES(?,?,?,?,?,?,?)').bind(id,email,name,'coach',salt,hash,iterations),db.prepare('INSERT INTO coach_groups(user_id,group_id) VALUES(?,?)').bind(id,groupId)]);
   await audit(db,user.id,'create','coach',id);return ok({id},201);
  }
- if(p==='/api/settings'&&method==='POST'){
-  const cents=Number(b.monthly_fee_cents);if(!Number.isInteger(cents)||cents<0||cents>10000000)return err('Neispravan iznos.');
-  await db.prepare("UPDATE settings SET value=? WHERE key='monthly_fee_cents'").bind(String(cents)).run();await audit(db,user.id,'update','settings','monthly_fee_cents');return ok({ok:true});
- }
+ if(p==='/api/settings'&&method==='POST')return err('Standardna članarina je 40 €. Iznos po članu mijenja se u evidenciji članova.',410);
+
  return err('Nepoznata operacija.',404);
 }
 export default {async scheduled(event,env,ctx){ctx.waitUntil(deliverPush(env,'https://klub.fkmkm.workers.dev'));},async fetch(request,env,ctx){const url=new URL(request.url);if(!url.pathname.startsWith('/api/'))return env.ASSETS.fetch(request);try{return await route(request,env,url,ctx);}catch(e){if(e.status)return err(e.message,e.status);if(e.message?.includes('UNIQUE constraint'))return err('Ovaj podatak već postoji.',409);console.error(e);return err(e.message==='Obavezno polje nije popunjeno.'?e.message:'Greška na serveru.',e.message==='Obavezno polje nije popunjeno.'?400:500);}}};
